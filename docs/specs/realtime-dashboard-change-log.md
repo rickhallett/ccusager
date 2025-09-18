@@ -62,5 +62,43 @@
 - Added: click>=8.0.0 - Command-line interface framework
 - Added: pyyaml>=6.0 - Configuration file support
 
+## Phase 2 Changes (2025-09-17)
+
+### ccusager/modules/dashboard/keyboard_handler.py
+- **Change**: Created new keyboard event handling module
+- **Rationale**: Enable interactive dashboard control via keyboard
+- **Impact**: Adds pause/resume, refresh control, theme cycling, help system
+- **Commit**: (pending)
+
+### ccusager/modules/dashboard/dashboard.py
+- **Change**: Enhanced with keyboard integration and improved auto-refresh
+- **Rationale**: Better user interaction and live update mechanism
+- **Impact**: Non-blocking updates, status messages, help overlay
+- **Commit**: (pending)
+
+### ccusager/modules/dashboard/data_source.py  
+- **Change**: Added metric history tracking and efficiency scoring
+- **Rationale**: Support sparkline visualization and performance metrics
+- **Impact**: Maintains 50-point history for each metric
+- **Commit**: (pending)
+
+### ccusager/modules/dashboard/panel_renderer.py
+- **Change**: Enhanced metric panels with sparklines, added distribution panel
+- **Rationale**: Richer data visualization per Phase 2 requirements
+- **Impact**: All metrics show trend sparklines, new model distribution view
+- **Commit**: (pending)
+
+### ccusager/cli.py
+- **Change**: Updated default panels to include Phase 2 features
+- **Rationale**: Showcase new panel types and metrics
+- **Impact**: 7 panels by default including efficiency, distribution, context gauge
+- **Commit**: (pending)
+
+### tests/test_dashboard.py
+- **Change**: Created comprehensive test suite
+- **Rationale**: Ensure reliability and maintainability
+- **Impact**: 27 test cases covering all major components
+- **Commit**: (pending)
+
 ## Breaking Changes
-None - initial implementation
+None - backward compatible enhancements
