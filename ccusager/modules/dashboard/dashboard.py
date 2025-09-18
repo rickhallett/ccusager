@@ -2,16 +2,20 @@
 
 from typing import Dict, Any, List, Optional
 import time
+import json
+from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.align import Align
+from rich.text import Text
 
 from ...interfaces import IDashboardModule, DashboardPanel
 from .panel_renderer import PanelRenderer
 from .data_source import CCUsageDataSource
 from .theme_manager import ThemeManager
+from .keyboard_handler import DashboardKeyboardHandler
 
 
 class RichDashboardModule(IDashboardModule):
@@ -27,7 +31,12 @@ class RichDashboardModule(IDashboardModule):
         self.panel_renderer = PanelRenderer()
         self.data_source = CCUsageDataSource()
         self.theme_manager = ThemeManager()
+        self.keyboard_handler = DashboardKeyboardHandler(self)
         self._running = False
+        self._last_update = 0
+        self._status_message = ""
+        self._show_help = None
+        self._export_pending = None
         self._setup_layout()
     
     def _setup_layout(self):
@@ -50,13 +59,8 @@ class RichDashboardModule(IDashboardModule):
             )
         )
         
-        # Initialize footer
-        self.layout["footer"].update(
-            Panel(
-                "[dim]Press 'q' to quit | 'r' to refresh | '?' for help[/dim]",
-                border_style="dim"
-            )
-        )
+        # Initialize footer with keyboard shortcuts
+        self._update_footer()
     
     def initialize(self, config: Dict[str, Any]) -> None:
         """Initialize dashboard with configuration"""
@@ -135,21 +139,45 @@ class RichDashboardModule(IDashboardModule):
         }
     
     def start_live_mode(self):
-        """Start live auto-refreshing mode"""
+        """Start live auto-refreshing mode with keyboard interaction"""
         self._running = True
         
-        with Live(self.layout, refresh_per_second=1, console=self.console) as live:
-            self.live_display = live
-            
-            while self._running:
-                # Fetch latest data
-                self._update_all_panels()
+        # Start keyboard listener
+        self.keyboard_handler.start_listening()
+        
+        try:
+            with Live(self.layout, refresh_per_second=2, console=self.console) as live:
+                self.live_display = live
                 
-                # Update display
-                live.update(self.layout)
-                
-                # Wait for refresh interval
-                time.sleep(self.refresh_rate)
+                while self._running:
+                    current_time = time.time()
+                    
+                    # Check if it's time to refresh (unless paused)
+                    if not self.keyboard_handler.is_paused():
+                        if current_time - self._last_update >= self.refresh_rate:
+                            self._update_all_panels()
+                            self._last_update = current_time
+                    
+                    # Handle help display
+                    if self._show_help:
+                        self._display_help()
+                    
+                    # Handle export
+                    if self._export_pending:
+                        self._save_config(self._export_pending)
+                        self._export_pending = None
+                    
+                    # Update footer with status
+                    self._update_footer()
+                    
+                    # Update display
+                    live.update(self.layout)
+                    
+                    # Short sleep to prevent CPU spinning
+                    time.sleep(0.1)
+        finally:
+            # Stop keyboard listener when exiting
+            self.keyboard_handler.stop_listening()
     
     def stop_live_mode(self):
         """Stop live mode"""
@@ -196,27 +224,51 @@ class RichDashboardModule(IDashboardModule):
     def _extract_panel_data(self, panel: DashboardPanel, raw_data: Dict[str, Any]) -> Any:
         """Extract relevant data for specific panel type"""
         if panel.type == "metric":
-            # Extract metric value based on panel ID
+            # Extract metric value and sparkline based on panel ID
             if panel.id == "cost":
                 return {
                     "value": f"${raw_data.get('total_cost', 0):.2f}",
-                    "trend": raw_data.get('cost_trend', 0)
+                    "trend": raw_data.get('cost_trend', 0),
+                    "sparkline": self.data_source.get_metric_sparkline('cost')
                 }
             elif panel.id == "tokens":
                 return {
                     "value": f"{raw_data.get('total_tokens', 0):,}",
-                    "trend": raw_data.get('token_trend', 0)
+                    "trend": raw_data.get('token_trend', 0),
+                    "sparkline": self.data_source.get_metric_sparkline('tokens')
                 }
             elif panel.id == "burn_rate":
                 return {
                     "value": f"${raw_data.get('burn_rate', 0):.4f}/hr",
-                    "trend": 0
+                    "trend": 0,
+                    "sparkline": self.data_source.get_metric_sparkline('burn_rate')
+                }
+            elif panel.id == "efficiency":
+                efficiency = self.data_source.metric_history.get('efficiency', [0])[-1]
+                return {
+                    "value": f"{efficiency:.1f}%",
+                    "trend": 0,
+                    "sparkline": self.data_source.get_metric_sparkline('efficiency')
                 }
         elif panel.type == "chart":
             # Return trend data for charts
             return {
                 "values": raw_data.get('trend_data', [])
             }
+        elif panel.type == "distribution":
+            # Model distribution data
+            return {
+                "distribution": raw_data.get('model_distribution', {}),
+                "total_uses": sum(self.data_source.cache.get('model_usage', {}).values())
+            }
+        elif panel.type == "gauge":
+            # Context window utilization
+            if panel.id == "context_util":
+                return {
+                    "value": raw_data.get('context_utilization', 0),
+                    "max": 100,
+                    "label": "Context Window"
+                }
         
         return {}
     
@@ -225,3 +277,59 @@ class RichDashboardModule(IDashboardModule):
         # Re-render all remaining panels
         for panel in self.panels.values():
             self._render_panel(panel)
+    
+    def _update_footer(self):
+        """Update footer with current status and shortcuts"""
+        footer_text = "[dim]"
+        
+        # Add status message if present
+        if self._status_message:
+            footer_text += f"[bold yellow]{self._status_message}[/bold yellow] | "
+            # Clear status message after displaying
+            if time.time() - self._last_update > 2:
+                self._status_message = ""
+        
+        # Add pause indicator
+        if self.keyboard_handler.is_paused():
+            footer_text += "[bold red]PAUSED[/bold red] | "
+        
+        # Add keyboard shortcuts
+        footer_text += "q: Quit | r: Refresh | ?: Help | p: Pause | t: Theme | +/-: Speed"
+        footer_text += "[/dim]"
+        
+        self.layout["footer"].update(
+            Panel(
+                footer_text,
+                border_style="dim"
+            )
+        )
+    
+    def _display_help(self):
+        """Display help overlay in main panel"""
+        help_text = self.keyboard_handler.get_help_text()
+        
+        help_panel = Panel(
+            Align.center(help_text, vertical="middle"),
+            title="[bold]Keyboard Shortcuts[/bold]",
+            border_style="bright_cyan"
+        )
+        
+        # Temporarily replace main content with help
+        self.layout["main"].update(help_panel)
+        
+        # Clear help flag after a delay
+        if time.time() - self._last_update > 3:
+            self._show_help = None
+            # Re-render panels
+            for panel in self.panels.values():
+                self._render_panel(panel)
+    
+    def _save_config(self, config: Dict[str, Any]):
+        """Save configuration to file"""
+        config_path = Path.home() / ".ccusager" / "dashboard_config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        self._status_message = f"Config saved to {config_path}"
