@@ -27,22 +27,39 @@ class PanelRenderer:
             return self.render_gauge_panel(panel, theme_manager)
         elif panel.type == "status":
             return self.render_status_panel(panel, theme_manager)
+        elif panel.type == "distribution":
+            return self.render_distribution_panel(panel, theme_manager)
         else:
             return self.render_default_panel(panel, theme_manager)
     
     def render_metric_panel(self, panel: DashboardPanel, theme_manager: Any) -> Panel:
-        """Render simple metric display"""
+        """Render metric with value, trend, and sparkline"""
         value = panel.data.get('value', '0')
         trend = panel.data.get('trend', 0)
+        sparkline_data = panel.data.get('sparkline', [])
         
-        # Build content with trend indicator
-        content = Text()
-        content.append(str(value), style="bold cyan")
+        # Build content with value and trend
+        content_lines = []
+        
+        # Main value with trend
+        value_line = Text()
+        value_line.append(str(value), style="bold cyan")
         
         if trend > 0:
-            content.append(f" ↑{trend}%", style="green")
+            value_line.append(f" ↑{trend:.1f}%", style="green")
         elif trend < 0:
-            content.append(f" ↓{abs(trend)}%", style="red")
+            value_line.append(f" ↓{abs(trend):.1f}%", style="red")
+        
+        content_lines.append(Align.center(value_line))
+        
+        # Add sparkline if data available
+        if sparkline_data:
+            sparkline = self._create_sparkline(sparkline_data)
+            content_lines.append(Align.center(Text(sparkline, style="dim cyan")))
+        
+        # Combine content
+        from rich.console import Group
+        content = Group(*content_lines)
         
         # Apply theme styling
         border_style = theme_manager.get_panel_border_style()
@@ -51,7 +68,7 @@ class PanelRenderer:
             Align.center(content, vertical="middle"),
             title=f"[bold]{panel.title}[/bold]",
             border_style=border_style,
-            height=5
+            height=6
         )
     
     def render_chart_panel(self, panel: DashboardPanel, theme_manager: Any) -> Panel:
@@ -156,6 +173,63 @@ class PanelRenderer:
             title=f"[bold]{panel.title}[/bold]",
             border_style=border_style,
             height=5
+        )
+    
+    def render_distribution_panel(self, panel: DashboardPanel, theme_manager: Any) -> Panel:
+        """Render model distribution as a bar chart"""
+        distribution = panel.data.get('distribution', {})
+        total = panel.data.get('total_uses', 0)
+        
+        if not distribution:
+            content = "[dim]No model usage data yet[/dim]"
+        else:
+            # Create a simple bar chart
+            from rich.table import Table
+            from rich.bar import Bar
+            
+            table = Table(show_header=True, header_style="bold", box=None)
+            table.add_column("Model", style="cyan", width=20)
+            table.add_column("Usage", justify="right", width=8)
+            table.add_column("", width=30)  # Bar chart column
+            
+            # Sort by usage
+            sorted_dist = sorted(distribution.items(), key=lambda x: x[1], reverse=True)
+            
+            for model, percentage in sorted_dist[:5]:  # Show top 5
+                # Create a simple text-based bar
+                bar_width = int((percentage / 100) * 25)
+                bar = "█" * bar_width + "░" * (25 - bar_width)
+                
+                # Color based on percentage
+                if percentage > 50:
+                    bar_color = "red"
+                elif percentage > 30:
+                    bar_color = "yellow"
+                else:
+                    bar_color = "green"
+                    
+                table.add_row(
+                    model[:20],  # Truncate long model names
+                    f"{percentage:.1f}%",
+                    f"[{bar_color}]{bar}[/{bar_color}]"
+                )
+            
+            # Add total at bottom
+            if total > 0:
+                table.add_row(
+                    "[dim]Total calls[/dim]",
+                    f"[dim]{total}[/dim]",
+                    ""
+                )
+            
+            content = table
+        
+        border_style = theme_manager.get_panel_border_style()
+        
+        return Panel(
+            content,
+            title=f"[bold]{panel.title}[/bold]",
+            border_style=border_style
         )
     
     def render_default_panel(self, panel: DashboardPanel, theme_manager: Any) -> Panel:
