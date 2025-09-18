@@ -46,7 +46,7 @@ def dashboard(config: Optional[str], theme: str, refresh: int, compact: bool):
     # Create and initialize dashboard
     dashboard_module = RichDashboardModule()
     
-    # Set up default panels for Phase 1
+    # Set up default panels for Phase 2
     default_panels = [
         DashboardPanel(
             id="cost",
@@ -76,10 +76,37 @@ def dashboard(config: Optional[str], theme: str, refresh: int, compact: bool):
             refresh_rate=5
         ),
         DashboardPanel(
+            id="efficiency",
+            title="Efficiency Score",
+            type="metric",
+            position=(1, 1),
+            size=(1, 1),
+            data={},
+            refresh_rate=5
+        ),
+        DashboardPanel(
+            id="model_dist",
+            title="Model Distribution",
+            type="distribution",
+            position=(2, 0),
+            size=(1, 2),
+            data={},
+            refresh_rate=10
+        ),
+        DashboardPanel(
+            id="context_util",
+            title="Context Utilization",
+            type="gauge",
+            position=(3, 0),
+            size=(1, 1),
+            data={},
+            refresh_rate=5
+        ),
+        DashboardPanel(
             id="trend",
             title="Cost Trend (24h)",
             type="chart",
-            position=(1, 1),
+            position=(3, 1),
             size=(1, 1),
             data={},
             refresh_rate=10
