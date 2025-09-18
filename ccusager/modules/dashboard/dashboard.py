@@ -46,9 +46,24 @@ class RichDashboardModule(IDashboardModule):
             Layout(name="main"),
             Layout(name="footer", size=2)
         )
+        
+        # Split main into a 2x2 grid to better accommodate 7 panels
         self.layout["main"].split_row(
-            Layout(name="left"),
-            Layout(name="right")
+            Layout(name="left_column"),
+            Layout(name="right_column")
+        )
+        
+        # Split each column into sections
+        self.layout["main"]["left_column"].split_column(
+            Layout(name="left_top"),
+            Layout(name="left_middle"),
+            Layout(name="left_bottom")
+        )
+        
+        self.layout["main"]["right_column"].split_column(
+            Layout(name="right_top"),
+            Layout(name="right_middle"),
+            Layout(name="right_bottom")
         )
         
         # Initialize header
@@ -185,31 +200,51 @@ class RichDashboardModule(IDashboardModule):
     
     def _position_panel(self, panel: DashboardPanel):
         """Position panel in the layout grid"""
-        # For Phase 1, simple left/right positioning based on panel count
+        # Map panel positions to layout sections
         panel_count = len(self.panels)
         
-        if panel_count % 2 == 1:
-            target_layout = self.layout["main"]["left"]
-        else:
-            target_layout = self.layout["main"]["right"]
+        # Define layout sections in order
+        layout_sections = [
+            "left_top",
+            "right_top", 
+            "left_middle",
+            "right_middle",
+            "left_bottom",
+            "right_bottom"
+        ]
         
-        # Create a sub-layout for this panel if needed
-        if not hasattr(target_layout, "panels"):
-            target_layout.panels = []
-        
-        target_layout.panels.append(panel.id)
+        # Assign panel to available section
+        if panel_count <= len(layout_sections):
+            section_name = layout_sections[panel_count - 1]
+            # Store the section assignment for this panel
+            if not hasattr(self, '_panel_sections'):
+                self._panel_sections = {}
+            self._panel_sections[panel.id] = section_name
     
     def _render_panel(self, panel: DashboardPanel):
         """Render individual panel"""
         rendered = self.panel_renderer.render(panel, self.theme_manager)
         
-        # Determine which layout section to update
-        panel_count = list(self.panels.keys()).index(panel.id) + 1
-        
-        if panel_count % 2 == 1:
-            self.layout["main"]["left"].update(rendered)
+        # Get the assigned section for this panel
+        if hasattr(self, '_panel_sections') and panel.id in self._panel_sections:
+            section_name = self._panel_sections[panel.id]
+            
+            # Navigate to the correct layout section
+            try:
+                if section_name.startswith("left_"):
+                    column = "left_column"
+                    section = section_name
+                else:
+                    column = "right_column" 
+                    section = section_name
+                
+                self.layout["main"][column][section].update(rendered)
+            except KeyError:
+                # Fallback to left column if section not found
+                self.layout["main"]["left_column"]["left_top"].update(rendered)
         else:
-            self.layout["main"]["right"].update(rendered)
+            # Fallback positioning
+            self.layout["main"]["left_column"]["left_top"].update(rendered)
     
     def _update_all_panels(self):
         """Update all panels with latest data"""
