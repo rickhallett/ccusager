@@ -15,6 +15,14 @@ class CCUsageDataSource:
         self.last_fetch: float = 0
         self.fetch_interval: float = 5.0  # Minimum seconds between fetches
         self.mock_mode: bool = False  # For testing without bunx
+        self.metric_history: Dict[str, List[float]] = {
+            'cost': [],
+            'tokens': [],
+            'burn_rate': [],
+            'efficiency': [],
+            'context_util': []
+        }
+        self.history_size = 50  # Keep last 50 data points for each metric
     
     def fetch_current_data(self) -> Dict[str, Any]:
         """Get latest usage data from bunx ccusage"""
@@ -164,6 +172,16 @@ class CCUsageDataSource:
         # Keep only last 1000 data points for trends
         self.cache['trends'] = self.cache['trends'][-1000:]
         
+        # Update metric history for sparklines
+        self._update_metric_history('cost', data.get('total_cost', 0))
+        self._update_metric_history('tokens', data.get('total_tokens', 0))
+        self._update_metric_history('burn_rate', self.calculate_burn_rate())
+        self._update_metric_history('context_util', self.get_context_utilization())
+        
+        # Calculate and store efficiency score
+        efficiency = self._calculate_efficiency_score(data)
+        self._update_metric_history('efficiency', efficiency)
+        
         # Update session data
         if 'session' in data:
             self.cache['current_session_tokens'] = \
@@ -202,6 +220,32 @@ class CCUsageDataSource:
             processed['token_trend'] = 0
         
         return processed
+    
+    def _update_metric_history(self, metric: str, value: float):
+        """Update history for a specific metric"""
+        if metric in self.metric_history:
+            self.metric_history[metric].append(value)
+            # Keep only last N data points
+            if len(self.metric_history[metric]) > self.history_size:
+                self.metric_history[metric] = self.metric_history[metric][-self.history_size:]
+    
+    def _calculate_efficiency_score(self, data: Dict[str, Any]) -> float:
+        """Calculate efficiency score based on tokens per dollar"""
+        cost = data.get('total_cost', 0)
+        tokens = data.get('total_tokens', 0)
+        
+        if cost > 0:
+            # Efficiency: tokens per dollar (normalized to 0-100)
+            tokens_per_dollar = tokens / cost
+            # Normalize assuming 10000 tokens/dollar is 100% efficient
+            efficiency = min(100, (tokens_per_dollar / 10000) * 100)
+            return efficiency
+        
+        return 0.0
+    
+    def get_metric_sparkline(self, metric: str) -> List[float]:
+        """Get sparkline data for a specific metric"""
+        return self.metric_history.get(metric, [])[-20:]  # Last 20 points
     
     def _get_mock_data(self) -> Dict[str, Any]:
         """Generate mock data for testing"""
