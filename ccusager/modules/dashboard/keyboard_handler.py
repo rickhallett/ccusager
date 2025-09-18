@@ -13,6 +13,7 @@ class KeyboardHandler:
     
     def __init__(self):
         self.key_bindings: Dict[str, Callable] = {}
+        self._key_descriptions: Dict[str, str] = {}
         self.running = False
         self.listener_thread: Optional[threading.Thread] = None
         self._original_settings = None
@@ -20,8 +21,10 @@ class KeyboardHandler:
     def register_key(self, key: str, callback: Callable, description: str = ""):
         """Register a keyboard shortcut"""
         self.key_bindings[key] = callback
-        if hasattr(callback, '__doc__'):
-            callback.__doc__ = description or callback.__doc__
+        # Store description separately since method __doc__ is not writable
+        if not hasattr(self, '_key_descriptions'):
+            self._key_descriptions = {}
+        self._key_descriptions[key] = description or getattr(callback, '__doc__', '')
     
     def unregister_key(self, key: str):
         """Remove a keyboard shortcut"""
@@ -126,23 +129,29 @@ class KeyboardHandler:
         """Generate help text for available keyboard shortcuts"""
         help_lines = ["Keyboard Shortcuts:", "=" * 40]
         
-        # Standard shortcuts
-        standard_keys = {
-            'q': 'Quit dashboard',
-            'r': 'Refresh data',
-            '?': 'Show this help',
-            'h': 'Show this help',
-            'p': 'Pause/Resume auto-refresh',
-            't': 'Cycle through themes',
-            '+': 'Increase refresh rate',
-            '-': 'Decrease refresh rate',
-            'e': 'Export configuration',
-            'c': 'Clear and redraw'
-        }
-        
-        for key, desc in standard_keys.items():
-            if key in self.key_bindings:
-                help_lines.append(f"  {key:<3} - {desc}")
+        # Use stored descriptions if available
+        if hasattr(self, '_key_descriptions'):
+            for key, desc in self._key_descriptions.items():
+                if key in self.key_bindings and desc:
+                    help_lines.append(f"  {key:<3} - {desc}")
+        else:
+            # Fallback to standard shortcuts
+            standard_keys = {
+                'q': 'Quit dashboard',
+                'r': 'Refresh data',
+                '?': 'Show this help',
+                'h': 'Show this help',
+                'p': 'Pause/Resume auto-refresh',
+                't': 'Cycle through themes',
+                '+': 'Increase refresh rate',
+                '-': 'Decrease refresh rate',
+                'e': 'Export configuration',
+                'c': 'Clear and redraw'
+            }
+            
+            for key, desc in standard_keys.items():
+                if key in self.key_bindings:
+                    help_lines.append(f"  {key:<3} - {desc}")
         
         # Arrow keys
         if any(k.startswith('arrow_') for k in self.key_bindings):
